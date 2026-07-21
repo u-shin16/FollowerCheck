@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>よう見とんで｜noteの片思いフォローチェッカー</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="hero">
+      <h1 class="hero__title">よう見とんで</h1>
+      <p class="hero__sub">note片思いフォローチェッカー</p>
+      <p class="hero__desc">フォローバックされていない人・フォロー返し忘れている人を見つけます。</p>
+    </header>
+
+    <form id="check-form" class="search" autocomplete="off">
+      <input
+        id="username-input"
+        type="text"
+        list="username-history"
+        placeholder="noteのユーザー名 または プロフィールURL"
+        required
+      >
+      <datalist id="username-history"></datalist>
+      <button type="submit" id="check-button">チェックする</button>
+    </form>
+
+    <p id="status" class="status" hidden></p>
+
+    <section id="result" class="result" hidden>
+      <div id="profile-card" class="profile-card"></div>
+      <p id="capped-warning" class="warning" hidden>
+        ⚠️ フォロー/フォロワーが多いアカウントのため、note.com側の上限により一部しか確認できていない可能性があります。
+      </p>
+
+      <div id="cookie-panel" class="bulk-panel" hidden>
+        <button type="button" id="cookie-help-toggle" class="disclosure-toggle">⚙️ フォロー操作の準備</button>
+        <div id="cookie-help-body" class="cookie-help" hidden>
+          <ol>
+            <li>
+              おすすめ: 拡張機能「よう見とんで ヘルパー」を使う → note.comにログインしたタブでボタンを押すだけでコピーされます。
+              <a href="/extension.zip">拡張機能をダウンロード（ZIP）</a>
+              して展開し、Chromeの <code>chrome://extensions</code> を開く →「デベロッパーモード」をON →「パッケージ化されていない拡張機能を読み込む」→ 展開したフォルダを選択
+            </li>
+            <li>手動でやる場合: note.comにログインした状態で開発者ツールを開く（Mac: Cmd+Opt+I）→ Networkタブでnote.comのページをリロードし、一覧のどれかのリクエストをクリック→ Request Headers の <code>cookie:</code> の値を丸ごとコピーする</li>
+          </ol>
+          <p class="cookie-warning">
+            ⚠️ このCookieはnote.comアカウントの操作権限そのものです。信頼できない相手には絶対に渡さないでください。
+            このアプリでは入力欄に保存せず、フォロー操作の通信にその場で使うだけで、ディスクや外部には送信・保存しません。
+          </p>
+        </div>
+        <p class="rate-limit-note">
+          ℹ️ 一度に多くのフォロー/フォロー解除を行うと、note.com側のレート制限（429エラー）にかかることがあります。
+          少数ずつ実行し、429が出た場合は5〜10分ほど間隔を空けてから残りを試してください。
+        </p>
+        <input
+          id="cookie-input"
+          type="password"
+          placeholder="note.comのCookie文字列を丸ごと貼り付け"
+          autocomplete="off"
+        >
+      </div>
+
+      <div id="not-following-back-section" class="account-section" hidden>
+        <div class="section-header">
+          <h2 class="section-title">フォローバックされていない人一覧</h2>
+          <button type="button" id="not-following-back-toggle" class="settings-toggle small">表示する</button>
+        </div>
+        <div id="not-following-back-body" class="account-section-body" hidden>
+          <div class="bulk-actions">
+            <label class="select-all">
+              <input type="checkbox" id="select-all-unfollow">
+              全て選択
+            </label>
+            <button id="unfollow-button" type="button" disabled>選択した人をフォロー解除</button>
+          </div>
+          <p id="unfollow-status" class="status" hidden></p>
+          <ul id="not-following-back-list" class="account-list"></ul>
+        </div>
+      </div>
+      <p id="empty-not-following-back" class="empty-state" hidden>
+        全員フォローバックしてくれています！良い関係ですね🎉
+      </p>
+
+      <div id="to-follow-back-section" class="account-section" hidden>
+        <div class="section-header">
+          <h2 class="section-title">フォロー返し候補（向こうはフォローしてくれてるのに、まだフォローしてない人）</h2>
+          <button type="button" id="to-follow-back-toggle" class="settings-toggle small">表示する</button>
+        </div>
+        <div id="to-follow-back-body" class="account-section-body" hidden>
+          <div class="bulk-actions">
+            <label class="select-all">
+              <input type="checkbox" id="select-all-follow">
+              全て選択
+            </label>
+            <button id="follow-button" type="button" disabled>選択した人をフォローする</button>
+          </div>
+          <p id="follow-status" class="status" hidden></p>
+          <ul id="to-follow-back-list" class="account-list"></ul>
+        </div>
+      </div>
+      <p id="empty-to-follow-back" class="empty-state" hidden>
+        フォロー返し忘れはなさそうです👍
+      </p>
+    </section>
+  </div>
+
+  <div id="account-modal-overlay" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <button type="button" id="modal-close" class="modal-close" aria-label="閉じる">✕</button>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

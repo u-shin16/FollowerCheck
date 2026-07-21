@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>よう見とんで ヘルパー</title>
+<style>
+  body {
+    width: 260px;
+    font-family: "Hiragino Sans", "Yu Gothic", sans-serif;
+    padding: 14px;
+    color: #24313a;
+  }
+  h1 {
+    font-size: 0.95rem;
+    margin: 0 0 8px;
+  }
+  p {
+    font-size: 0.8rem;
+    color: #6b7a80;
+    margin: 0 0 12px;
+    line-height: 1.5;
+  }
+  button {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    background: #3ec1a0;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  button:hover {
+    background: #2ea888;
+  }
+  #status {
+    margin-top: 10px;
+    font-size: 0.8rem;
+    min-height: 1.2em;
+  }
+  #status.error {
+    color: #e0575b;
+  }
+  #status.success {
+    color: #2ea888;
+  }
+</style>
+</head>
+<body>
+  <h1>よう見とんで ヘルパー</h1>
+  <p>note.comにログイン済みの状態でボタンを押すと、セッションCookieをコピーします。アプリの入力欄に貼り付けてください。</p>
+  <button id="copy-btn">Cookieをコピー</button>
+  <p id="status"></p>
+  <script src="popup.js"></script>
+</body>
+</html>
