@@ -20,8 +20,6 @@ REQUEST_TIMEOUT = 10
 MAX_WORKERS = 5
 MAX_PAGES = 100  # safety cap; note.com itself caps lists around 600 items (50 pages)
 FOLLOW_ACTION_DELAY_SECONDS = 2.5  # note.com 429s a burst of follow/unfollow calls; space them out
-FOLLOW_ACTION_MAX_RETRIES = 3
-FOLLOW_ACTION_RETRY_BACKOFF_SECONDS = 5
 MAX_FOLLOW_ACTION_TARGETS = 200  # guard against accidental/huge batch requests
 
 
@@ -235,20 +233,10 @@ def perform_follow_action(cookie_header, targets, method):
         resp = None
         error = None
 
-        for attempt in range(FOLLOW_ACTION_MAX_RETRIES + 1):
-            try:
-                resp = session.request(method, url, headers=headers, timeout=REQUEST_TIMEOUT)
-            except requests.RequestException:
-                error = "note.comへの接続に失敗しました"
-                break
-
-            if resp.status_code != 429:
-                break
-
-            if attempt < FOLLOW_ACTION_MAX_RETRIES:
-                retry_after = resp.headers.get("Retry-After")
-                wait_seconds = float(retry_after) if retry_after else FOLLOW_ACTION_RETRY_BACKOFF_SECONDS * (attempt + 1)
-                time.sleep(wait_seconds)
+        try:
+            resp = session.request(method, url, headers=headers, timeout=REQUEST_TIMEOUT)
+        except requests.RequestException:
+            error = "note.comへの接続に失敗しました"
 
         if error:
             results.append({"urlname": urlname, "success": False, "error": error})

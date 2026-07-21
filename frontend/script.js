@@ -27,13 +27,46 @@ modalOverlay.addEventListener("click", (event) => {
   if (event.target === modalOverlay) closeModal();
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !modalOverlay.hidden) closeModal();
+  if (event.key !== "Escape") return;
+  if (!confirmOverlay.hidden) {
+    resolveConfirm(false);
+    return;
+  }
+  if (!modalOverlay.hidden) closeModal();
 });
 
 function closeModal() {
   modalOverlay.hidden = true;
   modalBody.innerHTML = "";
 }
+
+const confirmOverlay = document.getElementById("confirm-modal-overlay");
+const confirmMessageEl = document.getElementById("confirm-modal-message");
+const confirmOkButton = document.getElementById("confirm-modal-ok");
+const confirmCancelButton = document.getElementById("confirm-modal-cancel");
+let confirmResolve = null;
+
+function showConfirm(message) {
+  confirmMessageEl.textContent = message;
+  confirmOverlay.hidden = false;
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+  });
+}
+
+function resolveConfirm(result) {
+  confirmOverlay.hidden = true;
+  if (confirmResolve) {
+    confirmResolve(result);
+    confirmResolve = null;
+  }
+}
+
+confirmOkButton.addEventListener("click", () => resolveConfirm(true));
+confirmCancelButton.addEventListener("click", () => resolveConfirm(false));
+confirmOverlay.addEventListener("click", (event) => {
+  if (event.target === confirmOverlay) resolveConfirm(false);
+});
 
 async function openAccountModal(account, endpoint, actionVerb, onResolved) {
   modalOverlay.hidden = false;
@@ -62,7 +95,7 @@ async function openAccountModal(account, endpoint, actionVerb, onResolved) {
       return;
     }
 
-    const confirmed = window.confirm(
+    const confirmed = await showConfirm(
       `${account.name}を${actionVerb}します。よろしいですか？\n（note.com非公式の仕組みを使っているため、失敗する場合もあります）`
     );
     if (!confirmed) return;
@@ -192,7 +225,7 @@ function createAccountPanel({
     });
     if (targets.length === 0) return;
 
-    const confirmed = window.confirm(
+    const confirmed = await showConfirm(
       `${targets.length}件を${actionVerb}します。よろしいですか？\n（note.com非公式の仕組みを使っているため、失敗する場合もあります）`
     );
     if (!confirmed) return;

@@ -533,3 +533,43 @@ body {
 .modal-status.error {
   color: var(--danger);
 }
+
+.confirm-overlay {
+  z-index: 200;
+}
+
+.confirm-modal {
+  max-width: 320px;
+  text-align: center;
+}
+
+.confirm-modal__message {
+  font-size: 0.92rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  margin: 0 0 20px;
+}
+
+.confirm-modal__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.confirm-modal__button {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.confirm-modal__button.cancel {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.confirm-modal__button.ok {
+  background: var(--green);
+  color: #fff;
+}
