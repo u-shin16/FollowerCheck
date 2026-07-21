@@ -69,6 +69,7 @@ confirmOverlay.addEventListener("click", (event) => {
 });
 
 async function openAccountModal(account, endpoint, actionVerb, onResolved) {
+  const actionType = endpoint === "/api/unfollow" ? "unfollow" : "follow";
   modalOverlay.hidden = false;
   modalBody.innerHTML = renderModalProfile(account, null, "読み込み中…");
 
@@ -88,6 +89,13 @@ async function openAccountModal(account, endpoint, actionVerb, onResolved) {
   actionButton.classList.add(actionClass);
 
   actionButton.addEventListener("click", async () => {
+    if (activeAction && activeAction !== actionType) {
+      actionStatus.hidden = false;
+      actionStatus.className = "modal-status error";
+      actionStatus.textContent = "他の処理が完了するまでお待ちください";
+      return;
+    }
+
     if (!cookieInput.value.trim()) {
       actionStatus.hidden = false;
       actionStatus.className = "modal-status error";
@@ -104,6 +112,7 @@ async function openAccountModal(account, endpoint, actionVerb, onResolved) {
     actionStatus.hidden = false;
     actionStatus.className = "modal-status";
     actionStatus.textContent = "処理中…";
+    beginAction(actionType);
 
     try {
       const res = await fetch(endpoint, {
@@ -139,6 +148,8 @@ async function openAccountModal(account, endpoint, actionVerb, onResolved) {
       actionStatus.className = "modal-status error";
       actionStatus.textContent = "通信に失敗しました";
       actionButton.disabled = false;
+    } finally {
+      endAction();
     }
   });
 
@@ -186,7 +197,9 @@ function createAccountPanel({
   const buttonEl = document.getElementById(buttonId);
   const panelStatusEl = document.getElementById(statusId);
   const emptyEl = document.getElementById(emptyId);
+  const actionType = endpoint === "/api/unfollow" ? "unfollow" : "follow";
   let accounts = [];
+  let blocked = false;
 
   toggleEl.addEventListener("click", () => {
     bodyEl.hidden = !bodyEl.hidden;
@@ -196,7 +209,13 @@ function createAccountPanel({
   function updateButtonState() {
     const anySelected = listEl.querySelectorAll(".account-checkbox:checked").length > 0;
     const hasCookie = cookieInput.value.trim().length > 0;
-    buttonEl.disabled = !(anySelected && hasCookie);
+    buttonEl.disabled = blocked || !(anySelected && hasCookie);
+  }
+
+  function setBlocked(next) {
+    blocked = next;
+    bodyEl.classList.toggle("blocked", blocked);
+    updateButtonState();
   }
 
   selectAllEl.addEventListener("change", () => {
@@ -212,6 +231,7 @@ function createAccountPanel({
     const link = event.target.closest("a");
     if (!link) return;
     event.preventDefault();
+    if (blocked) return;
     const urlname = link.closest("li").dataset.urlname;
     const account = accounts.find((a) => a.urlname === urlname);
     if (account) openAccountModal(account, endpoint, actionVerb, applyResults);
@@ -234,6 +254,7 @@ function createAccountPanel({
     panelStatusEl.hidden = false;
     panelStatusEl.className = "status";
     panelStatusEl.textContent = `処理中…（${targets.length}件）`;
+    beginAction(actionType);
 
     try {
       const res = await fetch(endpoint, {
@@ -257,7 +278,7 @@ function createAccountPanel({
       panelStatusEl.className = "status error";
       panelStatusEl.textContent = "通信に失敗しました。時間をおいてもう一度お試しください";
     } finally {
-      updateButtonState();
+      endAction();
     }
   });
 
@@ -312,6 +333,7 @@ function createAccountPanel({
       return true;
     },
     refreshButtonState: updateButtonState,
+    setBlocked,
   };
 }
 
@@ -340,6 +362,26 @@ const followPanel = createAccountPanel({
   endpoint: "/api/follow",
   actionVerb: "フォロー",
 });
+
+let activeAction = null;
+
+function beginAction(type) {
+  activeAction = type;
+  // Only block the opposite panel; the active panel disables its own
+  // button directly, and re-running its updateButtonState here would
+  // undo that.
+  if (type === "follow") {
+    unfollowPanel.setBlocked(true);
+  } else {
+    followPanel.setBlocked(true);
+  }
+}
+
+function endAction() {
+  activeAction = null;
+  unfollowPanel.setBlocked(false);
+  followPanel.setBlocked(false);
+}
 
 cookieInput.addEventListener("input", () => {
   unfollowPanel.refreshButtonState();

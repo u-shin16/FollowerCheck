@@ -179,6 +179,7 @@ body {
 
 .account-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   background: var(--card-bg);
@@ -200,6 +201,7 @@ body {
   text-decoration: none;
   font-weight: 600;
   flex: 1;
+  min-width: 0;
 }
 
 .account-list a:hover {
@@ -240,9 +242,19 @@ body {
   margin-top: 4px;
 }
 
+.account-section-body.blocked {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .account-list .row-status {
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.account-list .row-status:not(:empty) {
+  flex-basis: 100%;
+  margin-left: 56px;
 }
 
 .account-list .row-status.error {

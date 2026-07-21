@@ -243,14 +243,15 @@ def perform_follow_action(cookie_header, targets, method):
             continue
 
         if resp.status_code == 429:
-            results.append(
-                {
-                    "urlname": urlname,
-                    "success": False,
-                    "error": "note.comのレート制限に達しました。数分〜数十分単位のクールダウンが必要な場合があるので、5〜10分ほど間隔を空けて件数を減らして試してください",
-                }
-            )
-            continue
+            rate_limit_error = "note.comのレート制限に達しました。数分〜数十分単位のクールダウンが必要な場合があるので、5〜10分ほど間隔を空けて件数を減らして試してください"
+            results.append({"urlname": urlname, "success": False, "error": rate_limit_error})
+            # Once rate-limited, every remaining target will fail the same way.
+            # Stop immediately instead of still waiting+trying each one.
+            for remaining in targets[index + 1 :]:
+                results.append(
+                    {"urlname": remaining.get("urlname"), "success": False, "error": rate_limit_error}
+                )
+            break
 
         if resp.status_code in (401, 403):
             results.append(
