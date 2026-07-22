@@ -102,6 +102,38 @@ def to_account(entry):
     }
 
 
+def normalized_urlname(entry):
+    urlname = entry.get("urlname")
+    if not urlname:
+        return None
+    return str(urlname).strip().lower()
+
+
+def account_identity_values(entry):
+    identities = set()
+    for field in ("key", "id"):
+        value = entry.get(field)
+        if value:
+            identities.add((field, str(value)))
+
+    urlname = normalized_urlname(entry)
+    if urlname:
+        identities.add(("urlname", urlname))
+
+    return identities
+
+
+def account_identities(entries):
+    identities = set()
+    for entry in entries:
+        identities.update(account_identity_values(entry))
+    return identities
+
+
+def is_known_account(entry, identities):
+    return not account_identity_values(entry).isdisjoint(identities)
+
+
 @app.get("/api/creator/<urlname>")
 def creator_detail(urlname):
     session = requests.Session()
@@ -147,25 +179,30 @@ def check():
     except requests.RequestException:
         return jsonify({"error": "note.comへの接続に失敗しました。時間をおいてもう一度お試しください"}), 502
 
-    follower_urlnames = {f.get("urlname") for f in followers}
-    following_urlnames = {f.get("urlname") for f in followings}
-
-    not_following_back = [
-        to_account(f) for f in followings if f.get("urlname") not in follower_urlnames
-    ]
-    not_following_back.sort(key=lambda account: account["name"])
-
-    to_follow_back = [
-        to_account(f) for f in followers if f.get("urlname") not in following_urlnames
-    ]
-    to_follow_back.sort(key=lambda account: account["name"])
-
+    follower_identities = account_identities(followers)
+    following_identities = account_identities(followings)
     follower_count = creator.get("followerCount") or 0
     following_count = creator.get("followingCount") or 0
-    capped = (
-        (follower_count > 0 and follower_count > followers_total)
-        or (following_count > 0 and following_count > followings_total)
-    )
+    followers_capped = follower_count > 0 and follower_count > followers_total
+    followings_capped = following_count > 0 and following_count > followings_total
+
+    if followers_capped:
+        not_following_back = []
+    else:
+        not_following_back = [
+            to_account(f) for f in followings if not is_known_account(f, follower_identities)
+        ]
+    not_following_back.sort(key=lambda account: account["name"])
+
+    if followings_capped:
+        to_follow_back = []
+    else:
+        to_follow_back = [
+            to_account(f) for f in followers if not is_known_account(f, following_identities)
+        ]
+    to_follow_back.sort(key=lambda account: account["name"])
+
+    capped = followers_capped or followings_capped
 
     return jsonify(
         {
@@ -180,6 +217,8 @@ def check():
             "checkedFollowerCount": len(followers),
             "notFollowingBack": not_following_back,
             "toFollowBack": to_follow_back,
+            "notFollowingBackReliable": not followers_capped,
+            "toFollowBackReliable": not followings_capped,
             "capped": capped,
         }
     )

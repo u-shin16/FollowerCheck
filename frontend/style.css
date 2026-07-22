@@ -168,6 +168,12 @@ body {
   font-size: 1rem;
 }
 
+.empty-state.warning {
+  color: var(--warn-text);
+  padding: 12px 14px;
+  text-align: left;
+}
+
 .account-list {
   list-style: none;
   margin: 0;

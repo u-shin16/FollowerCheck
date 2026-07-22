@@ -197,6 +197,7 @@ function createAccountPanel({
   const buttonEl = document.getElementById(buttonId);
   const panelStatusEl = document.getElementById(statusId);
   const emptyEl = document.getElementById(emptyId);
+  const defaultEmptyText = emptyEl.textContent;
   const actionType = endpoint === "/api/unfollow" ? "unfollow" : "follow";
   let accounts = [];
   let blocked = false;
@@ -308,6 +309,8 @@ function createAccountPanel({
       panelStatusEl.hidden = true;
       bodyEl.hidden = true;
       toggleEl.textContent = "表示する";
+      emptyEl.textContent = defaultEmptyText;
+      emptyEl.classList.remove("warning");
 
       if (newAccounts.length === 0) {
         sectionEl.hidden = true;
@@ -331,6 +334,20 @@ function createAccountPanel({
         .join("");
       updateButtonState();
       return true;
+    },
+    renderUnavailable(message) {
+      accounts = [];
+      selectAllEl.checked = false;
+      panelStatusEl.hidden = true;
+      bodyEl.hidden = true;
+      toggleEl.textContent = "表示する";
+      listEl.innerHTML = "";
+      sectionEl.hidden = true;
+      emptyEl.textContent = message;
+      emptyEl.classList.add("warning");
+      emptyEl.hidden = false;
+      updateButtonState();
+      return false;
     },
     refreshButtonState: updateButtonState,
     setBlocked,
@@ -493,8 +510,18 @@ function renderResult(data) {
     cappedWarning.hidden = false;
   }
 
-  const hasUnfollowTargets = unfollowPanel.render(data.notFollowingBack);
-  const hasFollowTargets = followPanel.render(data.toFollowBack);
+  const hasUnfollowTargets =
+    data.notFollowingBackReliable === false
+      ? unfollowPanel.renderUnavailable(
+          "フォロワー一覧がnote.com側の上限で一部しか取得できないため、フォローバックされていない人は正確に判定できません。"
+        )
+      : unfollowPanel.render(data.notFollowingBack);
+  const hasFollowTargets =
+    data.toFollowBackReliable === false
+      ? followPanel.renderUnavailable(
+          "フォロー中一覧がnote.com側の上限で一部しか取得できないため、フォロー済みの人が候補に混ざる可能性があります。この一覧は表示しません。"
+        )
+      : followPanel.render(data.toFollowBack);
   cookiePanel.hidden = !(hasUnfollowTargets || hasFollowTargets);
 }
 
