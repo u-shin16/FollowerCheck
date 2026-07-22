@@ -5,7 +5,7 @@ const statusEl = document.getElementById("status");
 const resultEl = document.getElementById("result");
 const profileCard = document.getElementById("profile-card");
 const cappedWarning = document.getElementById("capped-warning");
-const cookiePanel = document.getElementById("cookie-panel");
+const cappedWarningDefaultText = cappedWarning.textContent.trim();
 const cookieInput = document.getElementById("cookie-input");
 const cookieHelpToggle = document.getElementById("cookie-help-toggle");
 const cookieHelpBody = document.getElementById("cookie-help-body");
@@ -448,7 +448,14 @@ form.addEventListener("submit", async (event) => {
   hideAll();
 
   try {
-    const res = await fetch(`/api/check?username=${encodeURIComponent(username)}`);
+    const res = await fetch("/api/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username,
+        cookieHeader: cookieInput.value.trim(),
+      }),
+    });
     const data = await res.json();
 
     if (!res.ok) {
@@ -477,8 +484,6 @@ function setLoading(isLoading) {
 function hideAll() {
   resultEl.hidden = true;
   cappedWarning.hidden = true;
-  cookiePanel.hidden = true;
-  cookieInput.value = "";
   unfollowPanel.render([]);
   followPanel.render([]);
   profileCard.innerHTML = "";
@@ -506,23 +511,34 @@ function renderResult(data) {
     </div>
   `;
 
+  const warnings = [];
   if (data.capped) {
+    warnings.push(cappedWarningDefaultText);
+  }
+  if (data.authWarning) {
+    warnings.push(data.authWarning);
+  }
+  if (warnings.length > 0) {
+    cappedWarning.textContent = warnings.join(" ");
     cappedWarning.hidden = false;
   }
 
-  const hasUnfollowTargets =
-    data.notFollowingBackReliable === false
-      ? unfollowPanel.renderUnavailable(
-          "フォロワー一覧がnote.com側の上限で一部しか取得できないため、フォローバックされていない人は正確に判定できません。"
-        )
-      : unfollowPanel.render(data.notFollowingBack);
-  const hasFollowTargets =
-    data.toFollowBackReliable === false
-      ? followPanel.renderUnavailable(
-          "フォロー中一覧がnote.com側の上限で一部しか取得できないため、フォロー済みの人が候補に混ざる可能性があります。この一覧は表示しません。"
-        )
-      : followPanel.render(data.toFollowBack);
-  cookiePanel.hidden = !(hasUnfollowTargets || hasFollowTargets);
+  if (data.notFollowingBackReliable === false) {
+    unfollowPanel.renderUnavailable(
+      "フォロワー一覧がnote.com側の上限で一部しか取得できないため、フォローバックされていない人は正確に判定できません。"
+    );
+  } else {
+    unfollowPanel.render(data.notFollowingBack);
+  }
+
+  if (data.toFollowBackReliable === false) {
+    followPanel.renderUnavailable(
+      data.toFollowBackUnavailableReason ||
+        "フォロー返し候補を正確に判定できないため、この一覧は表示しません。"
+    );
+  } else {
+    followPanel.render(data.toFollowBack);
+  }
 }
 
 function escapeHtml(str) {

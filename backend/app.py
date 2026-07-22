@@ -21,6 +21,7 @@ MAX_WORKERS = 5
 MAX_PAGES = 100  # safety cap; note.com itself caps lists around 600 items (50 pages)
 FOLLOW_ACTION_DELAY_SECONDS = 2.5  # note.com 429s a burst of follow/unfollow calls; space them out
 MAX_FOLLOW_ACTION_TARGETS = 200  # guard against accidental/huge batch requests
+AUTH_VERIFY_WORKERS = 4
 
 
 class NoteApiError(Exception):
@@ -39,8 +40,19 @@ def normalize_username(raw):
     return raw
 
 
-def fetch_creator(session, urlname):
-    resp = session.get(f"{NOTE_API_BASE}/{urlname}", headers=REQUEST_HEADERS, timeout=REQUEST_TIMEOUT)
+def request_headers(cookie_header=None):
+    headers = {**REQUEST_HEADERS}
+    if cookie_header:
+        headers["Cookie"] = cookie_header
+    return headers
+
+
+def fetch_creator(session, urlname, headers=None):
+    resp = session.get(
+        f"{NOTE_API_BASE}/{urlname}",
+        headers=headers or REQUEST_HEADERS,
+        timeout=REQUEST_TIMEOUT,
+    )
     if resp.status_code == 404:
         return None
     if resp.status_code != 200:
@@ -134,6 +146,55 @@ def is_known_account(entry, identities):
     return not account_identity_values(entry).isdisjoint(identities)
 
 
+def parse_check_request():
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        return normalize_username(payload.get("username", "")), (payload.get("cookieHeader") or "").strip()
+
+    return normalize_username(request.args.get("username", "")), ""
+
+
+def cookie_matches_creator(session, urlname, cookie_header):
+    if not cookie_header:
+        return False
+
+    try:
+        creator = fetch_creator(session, urlname, headers=request_headers(cookie_header))
+    except (NoteApiError, requests.RequestException):
+        return False
+
+    return bool(creator and creator.get("isMyself"))
+
+
+def refine_accounts_with_authenticated_state(session, accounts, cookie_header, keep_account):
+    if not accounts:
+        return accounts
+
+    headers = request_headers(cookie_header)
+
+    def worker(account):
+        try:
+            detail = fetch_creator(session, account["urlname"], headers=headers)
+        except (NoteApiError, requests.RequestException):
+            return account
+
+        if detail is None:
+            return account
+
+        return account if keep_account(detail) else None
+
+    refined = []
+    with ThreadPoolExecutor(max_workers=AUTH_VERIFY_WORKERS) as executor:
+        futures = [executor.submit(worker, account) for account in accounts]
+        for future in as_completed(futures):
+            account = future.result()
+            if account:
+                refined.append(account)
+
+    refined.sort(key=lambda account: account["name"])
+    return refined
+
+
 @app.get("/api/creator/<urlname>")
 def creator_detail(urlname):
     session = requests.Session()
@@ -160,9 +221,9 @@ def creator_detail(urlname):
     )
 
 
-@app.get("/api/check")
+@app.route("/api/check", methods=["GET", "POST"])
 def check():
-    urlname = normalize_username(request.args.get("username", ""))
+    urlname, cookie_header = parse_check_request()
     if not urlname:
         return jsonify({"error": "noteのユーザー名を入力してください"}), 400
 
@@ -180,11 +241,13 @@ def check():
         return jsonify({"error": "note.comへの接続に失敗しました。時間をおいてもう一度お試しください"}), 502
 
     follower_identities = account_identities(followers)
-    following_identities = account_identities(followings)
     follower_count = creator.get("followerCount") or 0
     following_count = creator.get("followingCount") or 0
     followers_capped = follower_count > 0 and follower_count > followers_total
     followings_capped = following_count > 0 and following_count > followings_total
+    authenticated_check = cookie_matches_creator(session, urlname, cookie_header)
+    auth_warning = None
+    to_follow_back_unavailable_reason = None
 
     if followers_capped:
         not_following_back = []
@@ -193,14 +256,31 @@ def check():
             to_account(f) for f in followings if not is_known_account(f, follower_identities)
         ]
     not_following_back.sort(key=lambda account: account["name"])
+    if authenticated_check and not followings_capped:
+        not_following_back = refine_accounts_with_authenticated_state(
+            session,
+            [to_account(f) for f in followings],
+            cookie_header,
+            lambda detail: not detail.get("isFollowed"),
+        )
 
-    if followings_capped:
+    if authenticated_check and not followers_capped:
+        to_follow_back = refine_accounts_with_authenticated_state(
+            session,
+            [to_account(f) for f in followers],
+            cookie_header,
+            lambda detail: not detail.get("isFollowing"),
+        )
+    elif cookie_header and not authenticated_check:
         to_follow_back = []
+        auth_warning = "Cookieのログインアカウントとチェック対象が一致しなかったため、フォロー済みかどうかの追加確認は使いませんでした。"
+        to_follow_back_unavailable_reason = auth_warning
+    elif followers_capped:
+        to_follow_back = []
+        to_follow_back_unavailable_reason = "フォロワー一覧がnote.com側の上限で一部しか取得できないため、フォロー返し候補は正確に判定できません。"
     else:
-        to_follow_back = [
-            to_account(f) for f in followers if not is_known_account(f, following_identities)
-        ]
-    to_follow_back.sort(key=lambda account: account["name"])
+        to_follow_back = []
+        to_follow_back_unavailable_reason = "フォロー返し候補は、Cookieを貼ってログイン中の本人として確認できた場合だけ表示します。Cookieを入力して再チェックしてください。"
 
     capped = followers_capped or followings_capped
 
@@ -218,7 +298,10 @@ def check():
             "notFollowingBack": not_following_back,
             "toFollowBack": to_follow_back,
             "notFollowingBackReliable": not followers_capped,
-            "toFollowBackReliable": not followings_capped,
+            "toFollowBackReliable": authenticated_check and not followers_capped,
+            "toFollowBackUnavailableReason": to_follow_back_unavailable_reason,
+            "authenticatedCheck": authenticated_check,
+            "authWarning": auth_warning,
             "capped": capped,
         }
     )

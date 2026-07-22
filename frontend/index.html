@@ -32,39 +32,39 @@
 
     <p id="status" class="status" hidden></p>
 
+    <div id="cookie-panel" class="bulk-panel">
+      <button type="button" id="cookie-help-toggle" class="disclosure-toggle">⚙️ フォロー状態確認・フォロー操作の準備</button>
+      <div id="cookie-help-body" class="cookie-help" hidden>
+        <ol>
+          <li>
+            おすすめ: 拡張機能「よう見とんで ヘルパー」を使う → note.comにログインしたタブでボタンを押すだけでコピーされます。
+            <a href="/extension.zip">拡張機能をダウンロード（ZIP）</a>
+            して展開し、Chromeの <code>chrome://extensions</code> を開く →「デベロッパーモード」をON →「パッケージ化されていない拡張機能を読み込む」→ 展開したフォルダを選択
+          </li>
+          <li>手動でやる場合: note.comにログインした状態で開発者ツールを開く（Mac: Cmd+Opt+I）→ Networkタブでnote.comのページをリロードし、一覧のどれかのリクエストをクリック→ Request Headers の <code>cookie:</code> の値を丸ごとコピーする</li>
+        </ol>
+        <p class="cookie-warning">
+          ⚠️ このCookieはnote.comアカウントの操作権限そのものです。信頼できない相手には絶対に渡さないでください。
+          このアプリでは入力欄に保存せず、フォロー状態の確認とフォロー操作の通信にその場で使うだけで、ディスクや外部には送信・保存しません。
+        </p>
+      </div>
+      <p class="rate-limit-note">
+        ℹ️ Cookieを貼ってからチェックすると、ログイン中の本人としてフォロー済みかを追加確認します。
+        一度に多くのフォロー/フォロー解除を行うと、note.com側のレート制限（429エラー）にかかることがあります。
+      </p>
+      <input
+        id="cookie-input"
+        type="password"
+        placeholder="note.comのCookie文字列を丸ごと貼り付け（任意）"
+        autocomplete="off"
+      >
+    </div>
+
     <section id="result" class="result" hidden>
       <div id="profile-card" class="profile-card"></div>
       <p id="capped-warning" class="warning" hidden>
         ⚠️ フォロー/フォロワーが多いアカウントのため、note.com側の上限により一部しか確認できていない可能性があります。
       </p>
-
-      <div id="cookie-panel" class="bulk-panel" hidden>
-        <button type="button" id="cookie-help-toggle" class="disclosure-toggle">⚙️ フォロー操作の準備</button>
-        <div id="cookie-help-body" class="cookie-help" hidden>
-          <ol>
-            <li>
-              おすすめ: 拡張機能「よう見とんで ヘルパー」を使う → note.comにログインしたタブでボタンを押すだけでコピーされます。
-              <a href="/extension.zip">拡張機能をダウンロード（ZIP）</a>
-              して展開し、Chromeの <code>chrome://extensions</code> を開く →「デベロッパーモード」をON →「パッケージ化されていない拡張機能を読み込む」→ 展開したフォルダを選択
-            </li>
-            <li>手動でやる場合: note.comにログインした状態で開発者ツールを開く（Mac: Cmd+Opt+I）→ Networkタブでnote.comのページをリロードし、一覧のどれかのリクエストをクリック→ Request Headers の <code>cookie:</code> の値を丸ごとコピーする</li>
-          </ol>
-          <p class="cookie-warning">
-            ⚠️ このCookieはnote.comアカウントの操作権限そのものです。信頼できない相手には絶対に渡さないでください。
-            このアプリでは入力欄に保存せず、フォロー操作の通信にその場で使うだけで、ディスクや外部には送信・保存しません。
-          </p>
-        </div>
-        <p class="rate-limit-note">
-          ℹ️ 一度に多くのフォロー/フォロー解除を行うと、note.com側のレート制限（429エラー）にかかることがあります。
-          少数ずつ実行し、429が出た場合は5〜10分ほど間隔を空けてから残りを試してください。
-        </p>
-        <input
-          id="cookie-input"
-          type="password"
-          placeholder="note.comのCookie文字列を丸ごと貼り付け"
-          autocomplete="off"
-        >
-      </div>
 
       <div id="not-following-back-section" class="account-section" hidden>
         <div class="section-header">
