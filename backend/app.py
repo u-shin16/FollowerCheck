@@ -22,13 +22,20 @@ MAX_PAGES = 100  # safety cap; note.com itself caps lists around 600 items (50 p
 FOLLOW_ACTION_DELAY_SECONDS = 2.5  # note.com 429s a burst of follow/unfollow calls; space them out
 MAX_FOLLOW_ACTION_TARGETS = 200  # guard against accidental/huge batch requests
 AUTH_VERIFY_WORKERS = 4
+RATE_LIMIT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
+RATE_LIMIT_RETRY_AFTER_SECONDS = 90
+RATE_LIMIT_ERROR_MESSAGE = (
+    "note.comのレート制限にかかっています。フォロー操作の直後は一覧取得が制限されることがあるため、"
+    "1〜2分ほど待ってから再チェックしてください。"
+)
 
 
 class NoteApiError(Exception):
-    def __init__(self, message, status=502):
+    def __init__(self, message, status=502, retry_after=None):
         super().__init__(message)
         self.message = message
         self.status = status
+        self.retry_after = retry_after
 
 
 def normalize_username(raw):
@@ -47,6 +54,40 @@ def request_headers(cookie_header=None):
     return headers
 
 
+def parse_retry_after(raw):
+    if not raw:
+        return RATE_LIMIT_RETRY_AFTER_SECONDS
+    try:
+        return max(1, int(float(raw)))
+    except (TypeError, ValueError):
+        return RATE_LIMIT_RETRY_AFTER_SECONDS
+
+
+def note_error_response(exc):
+    payload = {"error": exc.message}
+    if exc.retry_after:
+        payload["retryAfterSeconds"] = exc.retry_after
+    response = jsonify(payload)
+    if exc.retry_after:
+        response.headers["Retry-After"] = str(exc.retry_after)
+    return response, exc.status
+
+
+def note_json(resp, context):
+    try:
+        data = resp.json()
+    except ValueError:
+        raise NoteApiError(
+            f"{context}の応答を読み取れませんでした。note.comが一時的に制限している可能性があるため、少し待ってから再チェックしてください。"
+        )
+
+    if not isinstance(data, dict):
+        raise NoteApiError(
+            f"{context}の応答形式が想定外でした。時間をおいてもう一度お試しください。"
+        )
+    return data
+
+
 def fetch_creator(session, urlname, headers=None):
     resp = session.get(
         f"{NOTE_API_BASE}/{urlname}",
@@ -55,25 +96,48 @@ def fetch_creator(session, urlname, headers=None):
     )
     if resp.status_code == 404:
         return None
+    if resp.status_code == 429:
+        raise NoteApiError(
+            RATE_LIMIT_ERROR_MESSAGE,
+            status=429,
+            retry_after=parse_retry_after(resp.headers.get("Retry-After")),
+        )
     if resp.status_code != 200:
         raise NoteApiError(f"note.comへの問い合わせに失敗しました（status {resp.status_code}）")
-    return resp.json().get("data")
+    return note_json(resp, "note.com").get("data")
 
 
 def fetch_follow_page(session, urlname, kind, page):
-    resp = session.get(
-        f"{NOTE_API_BASE}/{urlname}/{kind}",
-        params={"page": page},
-        headers=REQUEST_HEADERS,
-        timeout=REQUEST_TIMEOUT,
-    )
+    resp = None
+    for index, delay in enumerate((0, *RATE_LIMIT_RETRY_DELAYS_SECONDS)):
+        if delay:
+            time.sleep(delay)
+        resp = session.get(
+            f"{NOTE_API_BASE}/{urlname}/{kind}",
+            params={"page": page},
+            headers=REQUEST_HEADERS,
+            timeout=REQUEST_TIMEOUT,
+        )
+        if resp.status_code != 429:
+            break
+
+    if resp.status_code == 429:
+        raise NoteApiError(
+            RATE_LIMIT_ERROR_MESSAGE,
+            status=429,
+            retry_after=parse_retry_after(resp.headers.get("Retry-After")),
+        )
     if resp.status_code != 200:
         raise NoteApiError(f"{kind}の取得に失敗しました（status {resp.status_code}）")
-    data = resp.json().get("data")
+    data = note_json(resp, kind).get("data")
     if isinstance(data, list):
         # note.com returns {"data": []} instead of the usual object shape
         # once a list is empty or a page is requested past the end.
         return [], 0, True
+    if not isinstance(data, dict):
+        raise NoteApiError(
+            f"{kind}の応答形式が想定外でした。時間をおいてもう一度お試しください。"
+        )
     return data.get("follows", []), data.get("totalCount", 0), data.get("isLastPage", True)
 
 
@@ -201,7 +265,7 @@ def creator_detail(urlname):
     try:
         creator = fetch_creator(session, urlname)
     except NoteApiError as exc:
-        return jsonify({"error": exc.message}), exc.status
+        return note_error_response(exc)
     except requests.RequestException:
         return jsonify({"error": "note.comへの接続に失敗しました。時間をおいてもう一度お試しください"}), 502
 
@@ -226,6 +290,8 @@ def check():
     urlname, cookie_header = parse_check_request()
     if not urlname:
         return jsonify({"error": "noteのユーザー名を入力してください"}), 400
+    if not cookie_header:
+        return jsonify({"error": "アカウントチェックにはnote.comのCookie文字列が必要です"}), 400
 
     session = requests.Session()
     try:
@@ -236,7 +302,7 @@ def check():
         followings, followings_total = fetch_all_follows(session, urlname, "followings")
         followers, followers_total = fetch_all_follows(session, urlname, "followers")
     except NoteApiError as exc:
-        return jsonify({"error": exc.message}), exc.status
+        return note_error_response(exc)
     except requests.RequestException:
         return jsonify({"error": "note.comへの接続に失敗しました。時間をおいてもう一度お試しください"}), 502
 

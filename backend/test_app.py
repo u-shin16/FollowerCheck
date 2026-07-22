@@ -9,6 +9,78 @@ class CheckEndpointTest(unittest.TestCase):
         app_module.app.config["TESTING"] = True
         self.client = app_module.app.test_client()
 
+    def test_check_requires_cookie_before_note_requests(self):
+        with patch.object(app_module, "fetch_creator") as fetch_creator:
+            response = self.client.post("/api/check", json={"username": "me"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Cookie", response.get_json()["error"])
+        fetch_creator.assert_not_called()
+
+    def test_check_returns_rate_limit_retry_hint(self):
+        creator = {
+            "urlname": "me",
+            "nickname": "Me",
+            "profileImageUrl": None,
+            "followingCount": 1,
+            "followerCount": 1,
+        }
+
+        with patch.object(app_module, "fetch_creator", return_value=creator), patch.object(
+            app_module,
+            "fetch_all_follows",
+            side_effect=app_module.NoteApiError("レート制限です", status=429, retry_after=12),
+        ):
+            response = self.client.post("/api/check", json={"username": "me", "cookieHeader": "session=ok"})
+
+        self.assertEqual(response.status_code, 429)
+        data = response.get_json()
+        self.assertEqual(data["error"], "レート制限です")
+        self.assertEqual(data["retryAfterSeconds"], 12)
+        self.assertEqual(response.headers["Retry-After"], "12")
+
+    def test_fetch_follow_page_retries_then_raises_friendly_rate_limit(self):
+        class RateLimitedResponse:
+            status_code = 429
+            headers = {"Retry-After": "12"}
+
+        class RateLimitedSession:
+            def __init__(self):
+                self.calls = 0
+
+            def get(self, *_args, **_kwargs):
+                self.calls += 1
+                return RateLimitedResponse()
+
+        session = RateLimitedSession()
+        with patch.object(app_module.time, "sleep") as sleep:
+            with self.assertRaises(app_module.NoteApiError) as context:
+                app_module.fetch_follow_page(session, "me", "followings", 1)
+
+        self.assertEqual(session.calls, len(app_module.RATE_LIMIT_RETRY_DELAYS_SECONDS) + 1)
+        self.assertEqual(sleep.call_count, len(app_module.RATE_LIMIT_RETRY_DELAYS_SECONDS))
+        self.assertEqual(context.exception.status, 429)
+        self.assertEqual(context.exception.retry_after, 12)
+        self.assertIn("レート制限", context.exception.message)
+
+    def test_fetch_follow_page_handles_non_json_note_response(self):
+        class NonJsonResponse:
+            status_code = 200
+            headers = {}
+
+            def json(self):
+                raise ValueError("not json")
+
+        class NonJsonSession:
+            def get(self, *_args, **_kwargs):
+                return NonJsonResponse()
+
+        with self.assertRaises(app_module.NoteApiError) as context:
+            app_module.fetch_follow_page(NonJsonSession(), "me", "followings", 1)
+
+        self.assertEqual(context.exception.status, 502)
+        self.assertIn("応答を読み取れませんでした", context.exception.message)
+
     def test_follow_back_candidates_use_account_key_before_urlname(self):
         creator = {
             "urlname": "me",
@@ -36,7 +108,7 @@ class CheckEndpointTest(unittest.TestCase):
         with patch.object(app_module, "fetch_creator", return_value=creator), patch.object(
             app_module, "fetch_all_follows", side_effect=fake_fetch_all
         ):
-            response = self.client.get("/api/check?username=me")
+            response = self.client.post("/api/check", json={"username": "me", "cookieHeader": "session=other"})
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
@@ -64,7 +136,7 @@ class CheckEndpointTest(unittest.TestCase):
         with patch.object(app_module, "fetch_creator", return_value=creator), patch.object(
             app_module, "fetch_all_follows", side_effect=fake_fetch_all
         ):
-            response = self.client.get("/api/check?username=me")
+            response = self.client.post("/api/check", json={"username": "me", "cookieHeader": "session=other"})
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
@@ -90,7 +162,7 @@ class CheckEndpointTest(unittest.TestCase):
         with patch.object(app_module, "fetch_creator", return_value=creator), patch.object(
             app_module, "fetch_all_follows", side_effect=fake_fetch_all
         ):
-            response = self.client.get("/api/check?username=me")
+            response = self.client.post("/api/check", json={"username": "me", "cookieHeader": "session=other"})
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
@@ -117,7 +189,7 @@ class CheckEndpointTest(unittest.TestCase):
         with patch.object(app_module, "fetch_creator", return_value=creator), patch.object(
             app_module, "fetch_all_follows", side_effect=fake_fetch_all
         ):
-            response = self.client.get("/api/check?username=me")
+            response = self.client.post("/api/check", json={"username": "me", "cookieHeader": "session=other"})
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()

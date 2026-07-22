@@ -19,45 +19,71 @@
     </header>
 
     <form id="check-form" class="search" autocomplete="off">
+      <div class="search-row">
+        <input
+          id="username-input"
+          type="text"
+          list="username-history"
+          placeholder="noteのユーザー名 または プロフィールURL"
+          required
+        >
+        <datalist id="username-history"></datalist>
+        <button type="submit" id="check-button" disabled>チェックする</button>
+      </div>
       <input
-        id="username-input"
-        type="text"
-        list="username-history"
-        placeholder="noteのユーザー名 または プロフィールURL"
+        id="cookie-input"
+        type="password"
+        placeholder="note.comのCookie文字列を丸ごと貼り付け（必須）"
+        autocomplete="off"
         required
       >
-      <datalist id="username-history"></datalist>
-      <button type="submit" id="check-button">チェックする</button>
     </form>
 
     <p id="status" class="status" hidden></p>
 
     <div id="cookie-panel" class="bulk-panel">
-      <button type="button" id="cookie-help-toggle" class="disclosure-toggle">⚙️ フォロー状態確認・フォロー操作の準備</button>
+      <button type="button" id="cookie-help-toggle" class="disclosure-toggle">Cookieの取得方法</button>
       <div id="cookie-help-body" class="cookie-help" hidden>
-        <ol>
-          <li>
-            おすすめ: 拡張機能「よう見とんで ヘルパー」を使う → note.comにログインしたタブでボタンを押すだけでコピーされます。
-            <a href="/extension.zip">拡張機能をダウンロード（ZIP）</a>
-            して展開し、Chromeの <code>chrome://extensions</code> を開く →「デベロッパーモード」をON →「パッケージ化されていない拡張機能を読み込む」→ 展開したフォルダを選択
-          </li>
-          <li>手動でやる場合: note.comにログインした状態で開発者ツールを開く（Mac: Cmd+Opt+I）→ Networkタブでnote.comのページをリロードし、一覧のどれかのリクエストをクリック→ Request Headers の <code>cookie:</code> の値を丸ごとコピーする</li>
-        </ol>
+        <div class="cookie-methods">
+          <section class="cookie-method">
+            <div class="cookie-method__header">
+              <span class="cookie-method__label">おすすめ</span>
+              <h3>拡張機能でコピー</h3>
+            </div>
+            <p>note.comにログインしたタブでボタンを押すだけでCookieをコピーできます。</p>
+            <a class="cookie-download" href="/extension.zip">拡張機能をダウンロード（ZIP）</a>
+            <ol class="cookie-steps">
+              <li>ZIPを展開する</li>
+              <li>
+                <button type="button" id="extensions-url-copy" class="cookie-inline-link">chrome://extensions をコピー</button>
+                <span>Chromeのアドレスバーに貼り付けて開く</span>
+              </li>
+              <li>デベロッパーモードをONにする</li>
+              <li>「パッケージ化されていない拡張機能を読み込む」から展開したフォルダを選ぶ</li>
+            </ol>
+          </section>
+          <section class="cookie-method">
+            <div class="cookie-method__header">
+              <span class="cookie-method__label secondary">手動</span>
+              <h3>開発者ツールからコピー</h3>
+            </div>
+            <ol class="cookie-steps">
+              <li>note.comにログインした状態で開発者ツールを開く（Mac: Cmd+Opt+I）</li>
+              <li>Networkタブを開いてnote.comのページをリロードする</li>
+              <li>一覧のどれかのリクエストをクリックする</li>
+              <li>Request Headers の <code>cookie:</code> の値を丸ごとコピーする</li>
+            </ol>
+          </section>
+        </div>
         <p class="cookie-warning">
-          ⚠️ このCookieはnote.comアカウントの操作権限そのものです。信頼できない相手には絶対に渡さないでください。
+          <strong>注意:</strong> このCookieはnote.comアカウントの操作権限そのものです。信頼できない相手には絶対に渡さないでください。
           このアプリでは入力欄に保存せず、フォロー状態の確認とフォロー操作の通信にその場で使うだけで、ディスクや外部には送信・保存しません。
         </p>
       </div>
       <p class="rate-limit-note">
-        ℹ️ Cookieを貼ってからチェックすると、ログイン中の本人としてフォロー済みかを追加確認します。
+        <strong>メモ:</strong> アカウントチェックにはCookieが必要です。ログイン中の本人としてフォロー済みかを確認します。
         一度に多くのフォロー/フォロー解除を行うと、note.com側のレート制限（429エラー）にかかることがあります。
       </p>
-      <input
-        id="cookie-input"
-        type="password"
-        placeholder="note.comのCookie文字列を丸ごと貼り付け（任意）"
-        autocomplete="off"
-      >
     </div>
 
     <section id="result" class="result" hidden>
@@ -126,6 +152,8 @@
       </div>
     </div>
   </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="script.js"></script>
 </body>

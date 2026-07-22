@@ -9,6 +9,15 @@ const cappedWarningDefaultText = cappedWarning.textContent.trim();
 const cookieInput = document.getElementById("cookie-input");
 const cookieHelpToggle = document.getElementById("cookie-help-toggle");
 const cookieHelpBody = document.getElementById("cookie-help-body");
+const extensionsUrlCopy = document.getElementById("extensions-url-copy");
+const toastEl = document.getElementById("toast");
+const REQUIRED_COOKIE_MESSAGE = "アカウントチェックにはnote.comのCookie文字列が必要です";
+const CHECK_COOLDOWN_AFTER_ACTION_SECONDS = 90;
+const RATE_LIMIT_FALLBACK_COOLDOWN_SECONDS = 90;
+let isChecking = false;
+let checkCooldownUntil = 0;
+let checkCooldownTimer = null;
+let toastTimer = null;
 
 cookieHelpToggle.addEventListener("click", () => {
   cookieHelpBody.hidden = !cookieHelpBody.hidden;
@@ -136,8 +145,9 @@ async function openAccountModal(account, endpoint, actionVerb, onResolved) {
       if (onResolved) onResolved([result]);
 
       if (result.success) {
+        startCheckCooldown();
         actionStatus.className = "modal-status";
-        actionStatus.textContent = "完了しました";
+        actionStatus.textContent = "完了しました。再チェックは少し待ってからできます";
         setTimeout(closeModal, 800);
       } else {
         actionStatus.className = "modal-status error";
@@ -273,8 +283,9 @@ function createAccountPanel({
 
       applyResults(data.results);
       const successCount = data.results.filter((r) => r.success).length;
+      if (successCount > 0) startCheckCooldown();
       panelStatusEl.className = "status";
-      panelStatusEl.textContent = `${successCount}/${data.results.length}件の${actionVerb}に成功しました`;
+      panelStatusEl.textContent = `${successCount}/${data.results.length}件の${actionVerb}に成功しました。再チェックは少し待ってからできます`;
     } catch (err) {
       panelStatusEl.className = "status error";
       panelStatusEl.textContent = "通信に失敗しました。時間をおいてもう一度お試しください";
@@ -400,9 +411,96 @@ function endAction() {
   followPanel.setBlocked(false);
 }
 
+function getRemainingCheckCooldownSeconds() {
+  return Math.max(0, Math.ceil((checkCooldownUntil - Date.now()) / 1000));
+}
+
+function updateCheckButtonState() {
+  if (checkCooldownTimer) {
+    clearTimeout(checkCooldownTimer);
+    checkCooldownTimer = null;
+  }
+
+  if (isChecking) {
+    button.disabled = true;
+    button.textContent = "チェック中…";
+    return;
+  }
+
+  if (!input.value.trim() || !cookieInput.value.trim()) {
+    button.disabled = true;
+    button.textContent = "チェックする";
+    return;
+  }
+
+  const remainingSeconds = getRemainingCheckCooldownSeconds();
+  if (remainingSeconds > 0) {
+    button.disabled = true;
+    button.textContent = `再チェック ${remainingSeconds}秒後`;
+    checkCooldownTimer = setTimeout(updateCheckButtonState, 1000);
+    return;
+  }
+
+  button.disabled = false;
+  button.textContent = "チェックする";
+}
+
+function startCheckCooldown(seconds = CHECK_COOLDOWN_AFTER_ACTION_SECONDS) {
+  checkCooldownUntil = Math.max(checkCooldownUntil, Date.now() + seconds * 1000);
+  updateCheckButtonState();
+}
+
+async function readJsonResponse(res) {
+  const text = await res.text();
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    return {
+      parseError: true,
+      error: res.ok
+        ? "サーバーの応答を読み取れませんでした。時間をおいてもう一度お試しください"
+        : "サーバー側でエラーが発生しました。時間をおいてもう一度お試しください",
+    };
+  }
+}
+
+function syncCookieValidity() {
+  cookieInput.setCustomValidity(cookieInput.value.trim() ? "" : REQUIRED_COOKIE_MESSAGE);
+}
+
+function showCookieGuidance() {
+  showError("Cookieを貼り付けてからチェックしてください。下の案内から拡張機能を使うと簡単にコピーできます");
+  cookieHelpBody.hidden = false;
+  cookieHelpToggle.classList.add("open");
+  cookieInput.focus();
+  cookieInput.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+syncCookieValidity();
+
+input.addEventListener("input", updateCheckButtonState);
+
 cookieInput.addEventListener("input", () => {
+  syncCookieValidity();
+  updateCheckButtonState();
   unfollowPanel.refreshButtonState();
   followPanel.refreshButtonState();
+});
+
+cookieInput.addEventListener("invalid", () => {
+  showCookieGuidance();
+});
+
+extensionsUrlCopy.addEventListener("click", async () => {
+  const extensionsUrl = "chrome://extensions";
+  try {
+    await navigator.clipboard.writeText(extensionsUrl);
+    showToast("コピーしました");
+  } catch (err) {
+    showToast("コピーできませんでした。chrome://extensions を手入力してください", true);
+  }
 });
 
 const USERNAME_HISTORY_KEY = "youmitonde:usernameHistory";
@@ -436,11 +534,24 @@ renderUsernameHistory(usernameHistory);
 if (usernameHistory[0]) {
   input.value = usernameHistory[0];
 }
+updateCheckButtonState();
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const username = input.value.trim();
   if (!username) return;
+  const cookieHeader = cookieInput.value.trim();
+  syncCookieValidity();
+  if (!cookieHeader) {
+    showCookieGuidance();
+    cookieInput.reportValidity();
+    return;
+  }
+  const remainingCooldownSeconds = getRemainingCheckCooldownSeconds();
+  if (remainingCooldownSeconds > 0) {
+    showError(`フォロー操作の直後はnote.comがレート制限しやすいため、あと${remainingCooldownSeconds}秒ほど待ってから再チェックしてください`);
+    return;
+  }
 
   rememberUsername(username);
 
@@ -453,12 +564,15 @@ form.addEventListener("submit", async (event) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         username,
-        cookieHeader: cookieInput.value.trim(),
+        cookieHeader,
       }),
     });
-    const data = await res.json();
+    const data = await readJsonResponse(res);
 
-    if (!res.ok) {
+    if (!res.ok || data.parseError) {
+      if (res.status === 429) {
+        startCheckCooldown(data.retryAfterSeconds || RATE_LIMIT_FALLBACK_COOLDOWN_SECONDS);
+      }
       showError(data.error || "エラーが発生しました");
       return;
     }
@@ -472,8 +586,8 @@ form.addEventListener("submit", async (event) => {
 });
 
 function setLoading(isLoading) {
-  button.disabled = isLoading;
-  button.textContent = isLoading ? "チェック中…" : "チェックする";
+  isChecking = isLoading;
+  updateCheckButtonState();
   if (isLoading) {
     statusEl.hidden = false;
     statusEl.className = "status";
@@ -493,6 +607,19 @@ function showError(message) {
   statusEl.hidden = false;
   statusEl.className = "status error";
   statusEl.textContent = message;
+}
+
+function showToast(message, isError = false) {
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+  toastEl.textContent = message;
+  toastEl.classList.toggle("error", isError);
+  toastEl.hidden = false;
+  toastTimer = setTimeout(() => {
+    toastEl.hidden = true;
+  }, 2200);
 }
 
 function renderResult(data) {
