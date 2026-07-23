@@ -6,6 +6,7 @@ const resultEl = document.getElementById("result");
 const profileCard = document.getElementById("profile-card");
 const cappedWarning = document.getElementById("capped-warning");
 const cappedWarningDefaultText = cappedWarning.textContent.trim();
+const authWarningEl = document.getElementById("auth-warning");
 const cookieInput = document.getElementById("cookie-input");
 const cookieHelpToggle = document.getElementById("cookie-help-toggle");
 const cookieHelpBody = document.getElementById("cookie-help-body");
@@ -598,6 +599,7 @@ function setLoading(isLoading) {
 function hideAll() {
   resultEl.hidden = true;
   cappedWarning.hidden = true;
+  authWarningEl.hidden = true;
   unfollowPanel.render([]);
   followPanel.render([]);
   profileCard.innerHTML = "";
@@ -638,16 +640,14 @@ function renderResult(data) {
     </div>
   `;
 
-  const warnings = [];
   if (data.capped) {
-    warnings.push(cappedWarningDefaultText);
-  }
-  if (data.authWarning) {
-    warnings.push(data.authWarning);
-  }
-  if (warnings.length > 0) {
-    cappedWarning.textContent = warnings.join(" ");
+    cappedWarning.textContent = cappedWarningDefaultText;
     cappedWarning.hidden = false;
+  }
+
+  if (data.authWarning) {
+    authWarningEl.textContent = `🔑 ${data.authWarning}`;
+    authWarningEl.hidden = false;
   }
 
   if (data.notFollowingBackReliable === false) {
