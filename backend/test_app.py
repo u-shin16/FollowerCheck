@@ -39,6 +39,32 @@ class CheckEndpointTest(unittest.TestCase):
         self.assertEqual(data["retryAfterSeconds"], 12)
         self.assertEqual(response.headers["Retry-After"], "12")
 
+    def test_fetch_follow_page_requests_per_param_to_lift_notes_600_item_cap(self):
+        class RecordingResponse:
+            status_code = 200
+            headers = {}
+
+            def json(self):
+                return {"data": {"follows": [], "totalCount": 0, "isLastPage": True}}
+
+        class RecordingSession:
+            def __init__(self):
+                self.calls = []
+
+            def get(self, url, params=None, **kwargs):
+                self.calls.append(params)
+                return RecordingResponse()
+
+        session = RecordingSession()
+        app_module.fetch_follow_page(session, "me", "followings", 1)
+
+        self.assertEqual(len(session.calls), 1)
+        self.assertEqual(session.calls[0]["page"], 1)
+        # note.com silently caps these lists at ~600 items unless a `per`
+        # param is present at all (its value doesn't matter, oddly) --
+        # dropping this would silently reintroduce that cap.
+        self.assertIn("per", session.calls[0])
+
     def test_fetch_follow_page_retries_then_raises_friendly_rate_limit(self):
         class RateLimitedResponse:
             status_code = 429

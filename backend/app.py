@@ -18,7 +18,8 @@ NOTE_FOLLOW_API_BASE = "https://note.com/api/v3/users"
 REQUEST_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; YouMitonde/1.0)"}
 REQUEST_TIMEOUT = 10
 MAX_WORKERS = 5
-MAX_PAGES = 100  # safety cap; note.com itself caps lists around 600 items (50 pages)
+MAX_PAGES = 100  # safety cap against accidental/huge account lists
+FOLLOW_LIST_PAGE_SIZE_PARAM = 100  # passing &per= at all lifts note.com's ~600-item cap on these lists
 FOLLOW_ACTION_DELAY_SECONDS = 2.5  # note.com 429s a burst of follow/unfollow calls; space them out
 MAX_FOLLOW_ACTION_TARGETS = 200  # guard against accidental/huge batch requests
 AUTH_VERIFY_WORKERS = 4
@@ -123,7 +124,11 @@ def fetch_creator(session, urlname, headers=None):
 
 
 def fetch_follow_page(session, urlname, kind, page):
-    resp = request_with_retries(session, f"{NOTE_API_BASE}/{urlname}/{kind}", params={"page": page})
+    resp = request_with_retries(
+        session,
+        f"{NOTE_API_BASE}/{urlname}/{kind}",
+        params={"page": page, "per": FOLLOW_LIST_PAGE_SIZE_PARAM},
+    )
     raise_for_transient_status(resp)
     if resp.status_code != 200:
         raise NoteApiError(f"{kind}の取得に失敗しました（status {resp.status_code}）")
