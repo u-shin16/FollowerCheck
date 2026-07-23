@@ -28,6 +28,8 @@ RATE_LIMIT_ERROR_MESSAGE = (
     "note.comのレート制限にかかっています。フォロー操作の直後は一覧取得が制限されることがあるため、"
     "1〜2分ほど待ってから再チェックしてください。"
 )
+RETRYABLE_STATUS_CODES = (429, 502, 503, 504)
+SERVER_BUSY_ERROR_MESSAGE = "note.comが一時的に混み合っているようです。少し待ってから再度お試しください。"
 
 
 class NoteApiError(Exception):
@@ -88,45 +90,41 @@ def note_json(resp, context):
     return data
 
 
-def fetch_creator(session, urlname, headers=None):
-    resp = session.get(
-        f"{NOTE_API_BASE}/{urlname}",
-        headers=headers or REQUEST_HEADERS,
-        timeout=REQUEST_TIMEOUT,
-    )
-    if resp.status_code == 404:
-        return None
+def request_with_retries(session, url, params=None, headers=None):
+    resp = None
+    for delay in (0, *RATE_LIMIT_RETRY_DELAYS_SECONDS):
+        if delay:
+            time.sleep(delay)
+        resp = session.get(url, params=params, headers=headers or REQUEST_HEADERS, timeout=REQUEST_TIMEOUT)
+        if resp.status_code not in RETRYABLE_STATUS_CODES:
+            break
+    return resp
+
+
+def raise_for_transient_status(resp):
     if resp.status_code == 429:
         raise NoteApiError(
             RATE_LIMIT_ERROR_MESSAGE,
             status=429,
             retry_after=parse_retry_after(resp.headers.get("Retry-After")),
         )
+    if resp.status_code in (502, 503, 504):
+        raise NoteApiError(SERVER_BUSY_ERROR_MESSAGE, status=503, retry_after=RATE_LIMIT_RETRY_AFTER_SECONDS)
+
+
+def fetch_creator(session, urlname, headers=None):
+    resp = request_with_retries(session, f"{NOTE_API_BASE}/{urlname}", headers=headers)
+    if resp.status_code == 404:
+        return None
+    raise_for_transient_status(resp)
     if resp.status_code != 200:
         raise NoteApiError(f"note.comへの問い合わせに失敗しました（status {resp.status_code}）")
     return note_json(resp, "note.com").get("data")
 
 
 def fetch_follow_page(session, urlname, kind, page):
-    resp = None
-    for index, delay in enumerate((0, *RATE_LIMIT_RETRY_DELAYS_SECONDS)):
-        if delay:
-            time.sleep(delay)
-        resp = session.get(
-            f"{NOTE_API_BASE}/{urlname}/{kind}",
-            params={"page": page},
-            headers=REQUEST_HEADERS,
-            timeout=REQUEST_TIMEOUT,
-        )
-        if resp.status_code != 429:
-            break
-
-    if resp.status_code == 429:
-        raise NoteApiError(
-            RATE_LIMIT_ERROR_MESSAGE,
-            status=429,
-            retry_after=parse_retry_after(resp.headers.get("Retry-After")),
-        )
+    resp = request_with_retries(session, f"{NOTE_API_BASE}/{urlname}/{kind}", params={"page": page})
+    raise_for_transient_status(resp)
     if resp.status_code != 200:
         raise NoteApiError(f"{kind}の取得に失敗しました（status {resp.status_code}）")
     data = note_json(resp, kind).get("data")

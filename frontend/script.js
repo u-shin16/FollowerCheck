@@ -570,7 +570,7 @@ form.addEventListener("submit", async (event) => {
     const data = await readJsonResponse(res);
 
     if (!res.ok || data.parseError) {
-      if (res.status === 429) {
+      if (res.status === 429 || res.status === 503) {
         startCheckCooldown(data.retryAfterSeconds || RATE_LIMIT_FALLBACK_COOLDOWN_SECONDS);
       }
       showError(data.error || "エラーが発生しました");

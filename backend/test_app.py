@@ -63,6 +63,55 @@ class CheckEndpointTest(unittest.TestCase):
         self.assertEqual(context.exception.retry_after, 12)
         self.assertIn("レート制限", context.exception.message)
 
+    def test_fetch_follow_page_retries_on_server_busy_then_raises_friendly_message(self):
+        class BusyResponse:
+            status_code = 503
+            headers = {}
+
+        class BusySession:
+            def __init__(self):
+                self.calls = 0
+
+            def get(self, *_args, **_kwargs):
+                self.calls += 1
+                return BusyResponse()
+
+        session = BusySession()
+        with patch.object(app_module.time, "sleep") as sleep:
+            with self.assertRaises(app_module.NoteApiError) as context:
+                app_module.fetch_follow_page(session, "me", "followings", 1)
+
+        self.assertEqual(session.calls, len(app_module.RATE_LIMIT_RETRY_DELAYS_SECONDS) + 1)
+        self.assertEqual(sleep.call_count, len(app_module.RATE_LIMIT_RETRY_DELAYS_SECONDS))
+        self.assertEqual(context.exception.status, 503)
+        self.assertIn("混み合っている", context.exception.message)
+
+    def test_fetch_follow_page_succeeds_after_transient_server_error(self):
+        class FlakyResponse:
+            def __init__(self, status_code):
+                self.status_code = status_code
+                self.headers = {}
+
+            def json(self):
+                return {"data": {"follows": [], "totalCount": 0, "isLastPage": True}}
+
+        class FlakySession:
+            def __init__(self):
+                self.calls = 0
+
+            def get(self, *_args, **_kwargs):
+                self.calls += 1
+                return FlakyResponse(503 if self.calls == 1 else 200)
+
+        session = FlakySession()
+        with patch.object(app_module.time, "sleep"):
+            follows, total, is_last = app_module.fetch_follow_page(session, "me", "followings", 1)
+
+        self.assertEqual(session.calls, 2)
+        self.assertEqual(follows, [])
+        self.assertEqual(total, 0)
+        self.assertTrue(is_last)
+
     def test_fetch_follow_page_handles_non_json_note_response(self):
         class NonJsonResponse:
             status_code = 200
