@@ -246,6 +246,55 @@ class CheckEndpointTest(unittest.TestCase):
         self.assertFalse(data["notFollowingBackReliable"])
         self.assertFalse(data["toFollowBackReliable"])
 
+    def test_not_following_back_reliable_via_auth_even_when_followers_capped(self):
+        creator = {
+            "urlname": "me",
+            "nickname": "Me",
+            "profileImageUrl": None,
+            "followingCount": 1,
+            "followerCount": 601,
+            "isMyself": False,
+        }
+        auth_creator = {**creator, "isMyself": True}
+        mutual_candidate = {
+            "key": "already-follows-me",
+            "urlname": "already_follows_me",
+            "nickname": "Already Follows Me",
+        }
+        followings = [mutual_candidate]
+        followers = [{"key": f"follower-{i}", "urlname": f"follower_{i}"} for i in range(600)]
+
+        def fake_fetch_creator(_session, urlname, headers=None):
+            if urlname == "me" and headers and headers.get("Cookie") == "session=ok":
+                return auth_creator
+            if urlname == "me":
+                return creator
+            if urlname == "already_follows_me" and headers and headers.get("Cookie") == "session=ok":
+                return {"urlname": urlname, "isFollowing": False, "isFollowed": True}
+            return None
+
+        def fake_fetch_all(_session, _urlname, kind):
+            if kind == "followings":
+                return followings, len(followings)
+            # followerCount (601) > followers_total (600): followers are capped,
+            # but followings are not, so the authenticated per-account check
+            # should still be able to produce a reliable notFollowingBack list.
+            return followers, 600
+
+        with patch.object(app_module, "fetch_creator", side_effect=fake_fetch_creator), patch.object(
+            app_module, "fetch_all_follows", side_effect=fake_fetch_all
+        ):
+            response = self.client.post(
+                "/api/check",
+                json={"username": "me", "cookieHeader": "session=ok"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["capped"])
+        self.assertTrue(data["notFollowingBackReliable"])
+        self.assertEqual(data["notFollowingBack"], [])
+
     def test_authenticated_check_removes_already_followed_candidate(self):
         creator = {
             "urlname": "me",

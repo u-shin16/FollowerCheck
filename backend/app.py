@@ -320,13 +320,18 @@ def check():
             to_account(f) for f in followings if not is_known_account(f, follower_identities)
         ]
     not_following_back.sort(key=lambda account: account["name"])
+    not_following_back_reliable = not followers_capped
     if authenticated_check and not followings_capped:
+        # This method checks each followed account's authenticated isFollowed
+        # state directly, so it doesn't depend on our (possibly capped)
+        # followers list at all.
         not_following_back = refine_accounts_with_authenticated_state(
             session,
             [to_account(f) for f in followings],
             cookie_header,
             lambda detail: not detail.get("isFollowed"),
         )
+        not_following_back_reliable = True
 
     if authenticated_check and not followers_capped:
         to_follow_back = refine_accounts_with_authenticated_state(
@@ -361,7 +366,7 @@ def check():
             "checkedFollowerCount": len(followers),
             "notFollowingBack": not_following_back,
             "toFollowBack": to_follow_back,
-            "notFollowingBackReliable": not followers_capped,
+            "notFollowingBackReliable": not_following_back_reliable,
             "toFollowBackReliable": authenticated_check and not followers_capped,
             "toFollowBackUnavailableReason": to_follow_back_unavailable_reason,
             "authenticatedCheck": authenticated_check,
