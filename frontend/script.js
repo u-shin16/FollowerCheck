@@ -361,6 +361,18 @@ function createAccountPanel({
       updateButtonState();
       return false;
     },
+    renderHidden() {
+      accounts = [];
+      selectAllEl.checked = false;
+      panelStatusEl.hidden = true;
+      bodyEl.hidden = true;
+      toggleEl.textContent = "表示する";
+      listEl.innerHTML = "";
+      sectionEl.hidden = true;
+      emptyEl.hidden = true;
+      updateButtonState();
+      return false;
+    },
     refreshButtonState: updateButtonState,
     setBlocked,
   };
@@ -640,14 +652,19 @@ function renderResult(data) {
     </div>
   `;
 
+  if (data.authWarning) {
+    // A cookie/account mismatch makes every other capped/reliability note
+    // moot until it's fixed, so show only this one message.
+    authWarningEl.textContent = `🔑 ${data.authWarning}`;
+    authWarningEl.hidden = false;
+    unfollowPanel.renderHidden();
+    followPanel.renderHidden();
+    return;
+  }
+
   if (data.capped) {
     cappedWarning.textContent = cappedWarningDefaultText;
     cappedWarning.hidden = false;
-  }
-
-  if (data.authWarning) {
-    authWarningEl.textContent = `🔑 ${data.authWarning}`;
-    authWarningEl.hidden = false;
   }
 
   if (data.notFollowingBackReliable === false) {
